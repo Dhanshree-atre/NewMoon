@@ -117,6 +117,15 @@ export const connectToWallet = async (networkId: string): Promise<ConnectedAPI> 
     }
   }
 
+  const mismatch = failures.find((f) => /network mismatch|network.*switch/i.test(f));
+  if (mismatch) {
+    throw new Error(
+      `Network mismatch: your wallet is on a different network than the app (${networkId}). ` +
+        `Switch your wallet network to "${networkId}" in the 1AM extension ` +
+        '(or set VITE_NETWORK_ID in frontend/.env.local to match your wallet), then try again.',
+    );
+  }
+
   throw new Error(
     `Midnight Lace wallet did not respond. Tried ${failures.length} wallet(s): ${failures.join('; ')}. ` +
       'Approve the connection request in the wallet extension — if no popup appears, click the ' +

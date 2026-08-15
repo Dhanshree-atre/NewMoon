@@ -21,7 +21,7 @@ export interface AirdropContextValue {
 
 const AirdropContext = createContext<AirdropContextValue | null>(null);
 
-const networkId = import.meta.env.VITE_NETWORK_ID || 'preview';
+const networkId = import.meta.env.VITE_NETWORK_ID || 'preprod';
 const envContractAddress = (import.meta.env.VITE_CONTRACT_ADDRESS || '').trim();
 
 export const AirdropProvider = ({ children }: { children: ReactNode }) => {
