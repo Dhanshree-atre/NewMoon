@@ -8,6 +8,29 @@ const randomHex32 = (): string => {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 };
 
+const DeployedAddress = ({ address }: { address: string }) => {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard.writeText(address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1_500);
+    });
+  };
+  return (
+    <div className="deployed">
+      <h3>Contract deployed</h3>
+      <p className="muted small">
+        Contract address (set this as <code>VITE_CONTRACT_ADDRESS</code> in <code>frontend/.env.local</code>{' '}
+        so the app auto-joins this campaign on reload):
+      </p>
+      <code className="address">{address}</code>
+      <button className="btn" type="button" onClick={copy}>
+        {copied ? 'Copied!' : 'Copy address'}
+      </button>
+    </div>
+  );
+};
+
 const CreateCampaignForm = ({ onCreate }: { onCreate: (spec: { name: string; campaignIdHex: string; rewardPerClaim: bigint; maxClaims: bigint }) => void }) => {
   const { busy } = useAirdrop();
   const [name, setName] = useState('');
@@ -54,6 +77,7 @@ const AdminActions = ({ view, api }: { view: AirdropView; api: AirdropAPI }) => 
 
   return (
     <div>
+      {api && <DeployedAddress address={api.deployedContractAddress} />}
       <h3>Admin controls</h3>
       <p className="muted small">
         Admin public key: <code>{view.adminPubKeyHex.slice(0, 12)}…{view.adminPubKeyHex.slice(-8)}</code>
