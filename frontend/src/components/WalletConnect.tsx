@@ -8,7 +8,6 @@ const STATUS_LABEL: Record<WalletStatus, string> = {
   connected: 'Wallet connected',
   error: 'Connection failed',
 };
-
 export const WalletConnect = () => {
   const { status, error, walletIdentityHex, connect, busy } = useAirdrop();
   const connected = status === 'connected';
@@ -19,6 +18,12 @@ export const WalletConnect = () => {
         <span className={`dot ${connected ? 'dot-ok' : 'dot-warn'}`} />
         <span>{STATUS_LABEL[status]}</span>
       </div>
+      {status === 'connecting' && (
+        <p className="muted small">
+          Approve the connection request that pops up in your Midnight Lace wallet. If nothing pops up,
+          click the Lace extension icon and approve the connection there.
+        </p>
+      )}
       {!connected && status !== 'error' && (
         <button className="btn" onClick={() => void connect()} disabled={busy !== null}>
           Connect Midnight Lace wallet

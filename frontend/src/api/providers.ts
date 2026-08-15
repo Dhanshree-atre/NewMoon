@@ -64,9 +64,14 @@ export const connectToWallet = (networkId: string): Promise<ConnectedAPI> =>
       }),
       concatMap(async (initialAPI) => initialAPI.connect(networkId)),
       timeout({
-        first: 5_000,
+        first: 20_000,
         with: () =>
-          throwError(() => new Error('Midnight Lace wallet did not respond. Is it enabled?')),
+          throwError(
+            () =>
+              new Error(
+                'Midnight Lace wallet did not respond. Approve the connection request that appears in the wallet extension, then try again.',
+              ),
+          ),
       }),
       catchError((error) =>
         throwError(() => new Error(`Unable to enable wallet connector API: ${String(error)}`)),
