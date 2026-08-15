@@ -1,0 +1,196 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// private-airdrop.compact — PrivateAirdrop
+// ========================================
+// A privacy-preserving token eligibility & claim platform on Midnight.
+//
+// One deployed contract instance == one airdrop campaign.
+//
+// ── PUBLIC vs PRIVATE ──────────────────────────────────────────────────────────
+//
+// PUBLIC on-chain state (any observer can read):
+//   * campaignName, campaignId          — campaign metadata
+//   * adminPubKey                       — dapp-scoped admin public key (a hash);
+//                                         reveals nothing about the admin's key
+//   * status (ACTIVE / CLOSED)          — campaign lifecycle
+//   * rewardPerClaim, maxClaims         — reward definition + campaign cap
+//   * totalClaims                       — how many claims succeeded
+//   * eligibilityList                   — hashes C = H(secret, salt) of everyone
+//                                         who registered eligibility. Hashes only;
+//                                         nobody can link a hash to a wallet.
+//   * authorizedCodes                   — hashes H(code) of the admin's one-time
+//                                         registration codes. The codes themselves
+//                                         never touch the chain.
+//   * claimedList                       — commitments already used to claim
+//                                         (on-chain duplicate-claim prevention)
+//   * nullifierLog                      — public nullifier N = H(secret, id) of
+//                                         every successful claim. This is the
+//                                         "selective disclosure" channel: a
+//                                         claimant can prove their claim happened
+//                                         by matching their own nullifier, while
+//                                         nobody else can tie N to a wallet.
+//   * lastVerificationResult            — boolean result of the public
+//                                         verifyClaim circuit ("was this
+//                                         nullifier a successful claim?").
+//
+// PRIVATE witness values (proved inside the ZK circuit, NEVER revealed, NEVER
+// written to the ledger, NEVER logged):
+//   * localAdminSk()   — the admin's secret key (deploy + admin circuits)
+//   * localSecret()    — a participant's eligibility secret
+//   * localSalt()      — a participant's blinding salt
+//   * localCode()      — a participant's one-time registration code
+//
+// A chain observer can see: how many people registered / claimed, that valid
+// zero-knowledge proofs were verified, campaign status, and opaque hashes.
+// A chain observer CANNOT see: who is eligible, which commitment belongs to
+// which wallet, which wallet claimed, any secret/code/salt, or any link
+// between a claim (nullifier) and an identity.
+//
+// ── CIRCUITS ───────────────────────────────────────────────────────────────────
+//   createCampaign     (constructor)  admin deploys the campaign
+//   adminAddCode       admin publishes one hashed registration code
+//   registerEligibility participant proves possession of a valid code and
+//                       registers the commitment H(secret, salt); the code and
+//                       the secret stay private witnesses.
+//   claim              participant proves ownership of an eligible commitment
+//                       and claims: commitment marked used, fresh nullifier
+//                       appended, totalClaims incremented. The secret never
+//                       appears on-chain.
+//   verifyClaim         anyone verifies that a nullifier corresponds to a
+//                       successful claim; result is the public Boolean
+//                       lastVerificationResult.
+//   closeCampaign       admin closes the campaign (blocks new claims).
+//
+pragma language_version >= 0.23;
+import CompactStandardLibrary;
+
+export enum CampaignStatus { ACTIVE, CLOSED }
+
+export ledger campaignName: Opaque<"string">;
+export ledger campaignId: Bytes<32>;
+export ledger adminPubKey: Bytes<32>;
+export ledger status: CampaignStatus;
+export ledger rewardPerClaim: Uint<8>;
+export ledger maxClaims: Uint<8>;
+export ledger totalClaims: Counter;
+export ledger eligibilityList: Set<Bytes<32>>;
+export ledger authorizedCodes: Set<Bytes<32>>;
+export ledger claimedList: Set<Bytes<32>>;
+export ledger nullifierLog: Set<Bytes<32>>;
+export ledger lastVerificationResult: Boolean;
+
+// ── PRIVATE WITNESSES (never revealed) ────────────────────────────────────────
+witness localAdminSk(): Bytes<32>;
+witness localSecret(): Bytes<32>;
+witness localSalt(): Bytes<32>;
+witness localCode(): Bytes<32>;
+
+// Commitment binding a secret + salt to the campaign's eligibility set.
+// Exported so off-chain code (CLI / tests / frontend) can compute the exact
+// same hash and compare against the public ledger.
+export circuit computeCommitment(_secret: Bytes<32>, _salt: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([pad(32, "private-airdrop:commitment:"), _secret, _salt]);
+}
+
+// Nullifier = one-way function of the secret and the campaign id. Used exactly
+// once per commitment to prevent double claiming, and it is the claimant's
+// anonymous receipt (selective disclosure).
+export circuit computeNullifier(_secret: Bytes<32>, _campaignId: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([pad(32, "private-airdrop:nullifier:"), _secret, _campaignId]);
+}
+
+// Hash of a one-time registration code (the whitelist stores hashes, never
+// the raw codes).
+export circuit computeCodeCommit(_code: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "private-airdrop:code:"), _code]);
+}
+
+// Dapp-scoped public identity derived from a secret key: lets circuits check
+// "who is the admin / caller" without ever revealing the secret key itself.
+export circuit getDappPubKey(_sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "private-airdrop:pk:"), _sk]);
+}
+
+// ── CAMPAIGN CREATION ─────────────────────────────────────────────────────────
+// Admin deploys the campaign. `_codes` is intentionally NOT a constructor arg:
+// constructor args cannot be collection (ADT) types, so the admin publishes
+// one-time registration code hashes afterwards via adminAddCode.
+constructor(_name: Opaque<"string">, _campaignId: Bytes<32>, _rewardPerClaim: Uint<8>, _maxClaims: Uint<8>) {
+    const adminSk = localAdminSk();
+    campaignName = disclose(_name);
+    campaignId = disclose(_campaignId);
+    adminPubKey = disclose(getDappPubKey(adminSk));
+    rewardPerClaim = disclose(_rewardPerClaim);
+    maxClaims = disclose(_maxClaims);
+    status = CampaignStatus.ACTIVE;
+    lastVerificationResult = false;
+}
+
+// ── ADMIN: publish a hashed one-time registration code ────────────────────────
+// The raw code is shared with the eligible participant out-of-band; only its
+// hash lives on-chain.
+export circuit adminAddCode(_code: Bytes<32>): [] {
+    const adminSk = localAdminSk();
+    const pubKey = getDappPubKey(adminSk);
+    assert(adminPubKey == disclose(pubKey), "Only the admin can add codes");
+    const codeCommit = disclose(computeCodeCommit(_code));
+    assert(!authorizedCodes.member(codeCommit), "Code already added");
+    authorizedCodes.insert(codeCommit);
+}
+
+// ── PRIVATE ELIGIBILITY REGISTRATION ──────────────────────────────────────────
+// The participant proves, in zero knowledge, that they hold a valid one-time
+// code AND that they know a secret+salt producing a fresh commitment. The
+// circuit registers the commitment hash on-chain. The code, secret and salt
+// are private witnesses — an observer sees only that "a new hash was added".
+export circuit registerEligibility(): [] {
+    assert(status == CampaignStatus.ACTIVE, "Campaign is not active");
+    const secret = localSecret();
+    const salt = localSalt();
+    const code = localCode();
+    const codeCommit = disclose(computeCodeCommit(code));
+    assert(authorizedCodes.member(codeCommit), "Invalid or unauthorized eligibility code");
+    authorizedCodes.remove(codeCommit);
+    const commitment = disclose(computeCommitment(secret, salt));
+    assert(!eligibilityList.member(commitment), "Already registered");
+    eligibilityList.insert(commitment);
+}
+
+// ── REWARD CLAIM ──────────────────────────────────────────────────────────────
+// Proves ownership of a valid eligible commitment WITHOUT revealing the
+// underlying witness (secret/salt). Prevents double claiming twice over: the
+// commitment is marked used, and a fresh nullifier is checked against the log.
+export circuit claim(): [] {
+    assert(status == CampaignStatus.ACTIVE, "Campaign is not active");
+    assert(totalClaims < maxClaims, "Claim limit reached");
+    const secret = localSecret();
+    const salt = localSalt();
+    const commitment = disclose(computeCommitment(secret, salt));
+    assert(eligibilityList.member(commitment), "Not eligible");
+    assert(!claimedList.member(commitment), "Already claimed");
+    const nullifier = disclose(computeNullifier(secret, campaignId));
+    assert(!nullifierLog.member(nullifier), "Nullifier already used");
+    claimedList.insert(commitment);
+    nullifierLog.insert(nullifier);
+    totalClaims.increment(1);
+}
+
+// ── CLAIM VERIFICATION (selective disclosure) ─────────────────────────────────
+// Anyone can ask: "is this nullifier a successfully verified claim?" The
+// result is written to the public Boolean lastVerificationResult. Because the
+// nullifier is a one-way hash, verifying it reveals nothing about the claimant.
+export circuit verifyClaim(_nullifier: Bytes<32>): [] {
+    const nullifier = disclose(_nullifier);
+    const isVerified = nullifierLog.member(nullifier);
+    lastVerificationResult = disclose(isVerified);
+}
+
+// ── CAMPAIGN CLOSING ──────────────────────────────────────────────────────────
+// Admin-only. After closing, registration and claiming are rejected.
+export circuit closeCampaign(): [] {
+    const adminSk = localAdminSk();
+    const pubKey = getDappPubKey(adminSk);
+    assert(adminPubKey == disclose(pubKey), "Only the admin can close the campaign");
+    assert(status == CampaignStatus.ACTIVE, "Campaign is already closed");
+    status = CampaignStatus.CLOSED;
+}
