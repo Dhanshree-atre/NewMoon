@@ -107,8 +107,8 @@ export const connectToWallet = async (networkId: string): Promise<ConnectedAPI> 
       console.debug(`[PrivateAirdrop] Connecting wallet ${name} (apiVersion ${api.apiVersion})...`);
       return await withTimeout(
         api.connect(networkId),
-        20_000,
-        () => `${name} did not respond within 20s`,
+        30_000,
+        () => `${name} did not respond within 30s`,
       );
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
