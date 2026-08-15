@@ -9,7 +9,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['node_modules', 'contracts/managed'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'frontend/**', 'contracts/managed'],
     root: '.',
     testTimeout: 120000,
     hookTimeout: 120000,
