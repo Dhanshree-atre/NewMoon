@@ -13,6 +13,7 @@ export interface AirdropContextValue {
   error: string | null;
   api: AirdropAPI | null;
   walletIdentityHex: string | null;
+  shieldedAddress: string | null;
   busy: string | null;
   connect: () => Promise<void>;
   createCampaign: (spec: CampaignSpec) => Promise<void>;
@@ -29,6 +30,7 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [api, setApi] = useState<AirdropAPI | null>(null);
   const [walletIdentityHex, setWalletIdentityHex] = useState<string | null>(null);
+  const [shieldedAddress, setShieldedAddress] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const providersRef = useRef<AirdropProviders | null>(null);
@@ -45,6 +47,7 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
       const shielded = await connectedAPI.getShieldedAddresses();
       const identityHex = shielded.shieldedCoinPublicKey;
       setWalletIdentityHex(identityHex);
+      setShieldedAddress(shielded.shieldedAddress);
 
       if (envContractAddress) {
         const joined = await AirdropAPI.join(providers, identityHex, envContractAddress);
@@ -90,8 +93,8 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const value = useMemo<AirdropContextValue>(
-    () => ({ status, error, api, walletIdentityHex, busy, connect, createCampaign, runAction }),
-    [status, error, api, walletIdentityHex, busy, connect, createCampaign, runAction],
+    () => ({ status, error, api, walletIdentityHex, shieldedAddress, busy, connect, createCampaign, runAction }),
+    [status, error, api, walletIdentityHex, shieldedAddress, busy, connect, createCampaign, runAction],
   );
 
   return <AirdropContext.Provider value={value}>{children}</AirdropContext.Provider>;
