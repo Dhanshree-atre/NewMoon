@@ -6,7 +6,6 @@
  * provider set from the wallet's configuration.
  */
 import semver from 'semver';
-import { interval, firstValueFrom, map, filter, take, timeout, throwError, catchError, concatMap, tap } from 'rxjs';
 import { FetchZkConfigProvider } from '@midnight-ntwrk/midnight-js-fetch-zk-config-provider';
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
@@ -37,47 +36,93 @@ declare global {
   }
 }
 
-const getFirstCompatibleWallet = (): InitialAPI | undefined => {
-  if (!window.midnight) return undefined;
-  return Object.values(window.midnight).find(
-    (wallet): wallet is InitialAPI =>
-      !!wallet &&
-      typeof wallet === 'object' &&
-      'apiVersion' in wallet &&
-      semver.satisfies(wallet.apiVersion, COMPATIBLE_CONNECTOR_API_VERSION),
-  );
+const listCompatibleWallets = (): Array<{ name: string; api: InitialAPI }> => {
+  if (!window.midnight) return [];
+  return Object.entries(window.midnight)
+    .filter(
+      (entry): entry is [string, InitialAPI] =>
+        !!entry[1] &&
+        typeof entry[1] === 'object' &&
+        'apiVersion' in entry[1] &&
+        semver.satisfies(entry[1].apiVersion, COMPATIBLE_CONNECTOR_API_VERSION),
+    )
+    .map(([name, api]) => ({ name, api }));
 };
 
-/** Waits for the wallet extension, connects to the network, and returns the ConnectedAPI. */
-export const connectToWallet = (networkId: string): Promise<ConnectedAPI> =>
-  firstValueFrom(
-    interval(100).pipe(
-      map(() => getFirstCompatibleWallet()),
-      filter((connectorAPI): connectorAPI is InitialAPI => !!connectorAPI),
-      take(1),
-      timeout({
-        first: 1_000,
-        with: () =>
-          throwError(
-            () => new Error('Could not find Midnight Lace wallet. Is the extension installed?'),
-          ),
-      }),
-      concatMap(async (initialAPI) => initialAPI.connect(networkId)),
-      timeout({
-        first: 20_000,
-        with: () =>
-          throwError(
-            () =>
-              new Error(
-                'Midnight Lace wallet did not respond. Approve the connection request that appears in the wallet extension, then try again.',
-              ),
-          ),
-      }),
-      catchError((error) =>
-        throwError(() => new Error(`Unable to enable wallet connector API: ${String(error)}`)),
-      ),
-    ),
+/** Human-readable description of every wallet injected into the page (for diagnostics). */
+const describeWallets = (): string => {
+  if (!window.midnight || Object.keys(window.midnight).length === 0) {
+    return 'no wallets injected into window.midnight';
+  }
+  return Object.entries(window.midnight)
+    .map(([name, api]) => {
+      const version =
+        api && typeof api === 'object' && 'apiVersion' in api
+          ? String((api as InitialAPI).apiVersion)
+          : 'unknown';
+      return `${name} (apiVersion ${version})`;
+    })
+    .join(', ');
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+const withTimeout = <T>(p: Promise<T>, ms: number, onTimeout: () => string): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(onTimeout())), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+
+/**
+ * Wait for the Midnight Lace wallet, then connect to the network.
+ *
+ * Tries every detected compatible wallet in turn (some browsers inject more
+ * than one provider); each attempt is bounded by its own timeout so one hung
+ * wallet cannot block the app.
+ */
+export const connectToWallet = async (networkId: string): Promise<ConnectedAPI> => {
+  let wallets = listCompatibleWallets();
+  const discoveryDeadline = Date.now() + 3_000;
+  while (wallets.length === 0 && Date.now() < discoveryDeadline) {
+    await sleep(100);
+    wallets = listCompatibleWallets();
+  }
+
+  if (wallets.length === 0) {
+    throw new Error(`Could not find Midnight Lace wallet (${describeWallets()}).`);
+  }
+
+  const failures: string[] = [];
+  for (const { name, api } of wallets) {
+    try {
+      console.debug(`[PrivateAirdrop] Connecting wallet ${name} (apiVersion ${api.apiVersion})...`);
+      return await withTimeout(
+        api.connect(networkId),
+        20_000,
+        () => `${name} did not respond within 20s`,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      failures.push(`${name}: ${msg}`);
+      console.warn(`[PrivateAirdrop] Wallet ${name} connect failed:`, error);
+    }
+  }
+
+  throw new Error(
+    `Midnight Lace wallet did not respond. Tried ${failures.length} wallet(s): ${failures.join('; ')}. ` +
+      'Approve the connection request in the wallet extension — if no popup appears, click the ' +
+      'Lace extension icon and approve the connection to this site.',
   );
+};
 
 /** Assembles the provider set from a connected wallet. */
 export const initializeProviders = async (
