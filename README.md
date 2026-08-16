@@ -22,7 +22,7 @@ wallet.
 - [Requirements](#requirements)
 - [Getting started](#getting-started)
 - [Testing](#testing)
-- [Deploying to Midnight Preview](#deploying-to-midnight-preview)
+- [Deploying to a Midnight network](#deploying-to-a-midnight-network)
 - [Frontend](#frontend)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
@@ -189,23 +189,29 @@ npm test
 
 ---
 
-## Deploying to Midnight Preview
+## Deploying to a Midnight network
 
 ```bash
 # 1. Proof server (needed for proving)
 npm run proof-server:start
 
-# 2. Deploy to the public Preview network
-npm run deploy -- --network preview
+# 2. Deploy to a public network (preview | preprod)
+npm run deploy -- --network preprod
 ```
 
 The script generates a fresh 24-word wallet (saved to the gitignored
-`.midnight-state.json`, printed for you to back up), syncs with Preview, waits
-for tNIGHT from the faucet (https://midnight-tmnight-preview.nethermind.dev),
+`.midnight-state.json`, printed for you to back up), syncs with the network,
+waits for tNIGHT from the faucet
+(preview: https://midnight-tmnight-preview.nethermind.dev,
+preprod: https://midnight-tmnight-preprod.nethermind.dev),
 registers DUST, deploys the contract, and prints the contract address.
 
 Set the address in the frontend (see below) so the browser app connects to your
 campaign.
+
+> **Reference preprod deployment** (deployed from the browser app):
+> `806413b7436003e625699f9166c49ec7eb783ea671a899542edc20530d2f3e1e`
+> (set as `VITE_CONTRACT_ADDRESS` in `frontend/.env.local` to auto-join it).
 
 > Prefer your own funded Lace wallet? Set `MIDNIGHT_WALLET_MNEMONIC` to your
 > 24-word phrase — the seed derivation is Lace-compatible.
