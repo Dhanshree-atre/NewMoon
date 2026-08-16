@@ -31,7 +31,7 @@ const CopyField = ({ value, label }: { value: string; label: string }) => {
 };
 
 export const WalletConnect = () => {
-  const { status, error, walletIdentityHex, shieldedAddress, connect, busy } = useAirdrop();
+  const { status, error, walletIdentityHex, shieldedAddress, unshieldedAddress, connect, busy } = useAirdrop();
   const connected = status === 'connected';
 
   return (
@@ -52,11 +52,16 @@ export const WalletConnect = () => {
         </button>
       )}
       {status === 'error' && error && <p className="error">{error}</p>}
-      {connected && shieldedAddress && (
+      {connected && unshieldedAddress && (
         <CopyField
-          value={shieldedAddress}
-          label="Wallet address (use this to claim testnet tokens from the faucet)"
+          value={unshieldedAddress}
+          label="Unshielded address (USE THIS for the preprod faucet)"
         />
+      )}
+      {connected && shieldedAddress && (
+        <p className="muted small">
+          Shielded address: <code>{shieldedAddress}</code>
+        </p>
       )}
       {connected && walletIdentityHex && (
         <p className="muted small">

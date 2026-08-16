@@ -14,6 +14,7 @@ export interface AirdropContextValue {
   api: AirdropAPI | null;
   walletIdentityHex: string | null;
   shieldedAddress: string | null;
+  unshieldedAddress: string | null;
   busy: string | null;
   connect: () => Promise<void>;
   createCampaign: (spec: CampaignSpec) => Promise<void>;
@@ -31,6 +32,7 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
   const [api, setApi] = useState<AirdropAPI | null>(null);
   const [walletIdentityHex, setWalletIdentityHex] = useState<string | null>(null);
   const [shieldedAddress, setShieldedAddress] = useState<string | null>(null);
+  const [unshieldedAddress, setUnshieldedAddress] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const providersRef = useRef<AirdropProviders | null>(null);
@@ -48,6 +50,8 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
       const identityHex = shielded.shieldedCoinPublicKey;
       setWalletIdentityHex(identityHex);
       setShieldedAddress(shielded.shieldedAddress);
+      const unshielded = await connectedAPI.getUnshieldedAddress();
+      setUnshieldedAddress(unshielded.unshieldedAddress);
 
       if (envContractAddress) {
         const joined = await AirdropAPI.join(providers, identityHex, envContractAddress);
@@ -93,8 +97,8 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const value = useMemo<AirdropContextValue>(
-    () => ({ status, error, api, walletIdentityHex, shieldedAddress, busy, connect, createCampaign, runAction }),
-    [status, error, api, walletIdentityHex, shieldedAddress, busy, connect, createCampaign, runAction],
+    () => ({ status, error, api, walletIdentityHex, shieldedAddress, unshieldedAddress, busy, connect, createCampaign, runAction }),
+    [status, error, api, walletIdentityHex, shieldedAddress, unshieldedAddress, busy, connect, createCampaign, runAction],
   );
 
   return <AirdropContext.Provider value={value}>{children}</AirdropContext.Provider>;
