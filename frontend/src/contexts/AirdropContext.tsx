@@ -77,6 +77,7 @@ export const AirdropProvider = ({ children }: { children: ReactNode }) => {
       const deployed = await AirdropAPI.deploy(providers, identityHex, spec);
       setApi(deployed);
     } catch (e) {
+      console.error('[PrivateAirdrop] Deploy failed:', e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);

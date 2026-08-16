@@ -33,10 +33,8 @@ export const App = () => {
 
       <WalletConnect />
 
-      {status === 'error' && error && (
-        <p className="error banner">
-          {error} — try again after approving the connection in your Midnight Lace wallet.
-        </p>
+      {error && (
+        <p className="error banner">{error}</p>
       )}
 
       {!connected && (

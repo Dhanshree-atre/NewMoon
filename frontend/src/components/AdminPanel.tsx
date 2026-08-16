@@ -116,7 +116,7 @@ const AdminActions = ({ view, api }: { view: AirdropView; api: AirdropAPI }) => 
 };
 
 export const AdminPanel = ({ view }: { view: AirdropView | null }) => {
-  const { api, createCampaign, busy } = useAirdrop();
+  const { api, createCampaign, busy, error } = useAirdrop();
   const [localError, setLocalError] = useState<string | null>(null);
 
   const create = (spec: Parameters<typeof createCampaign>[0]) => {
@@ -127,6 +127,7 @@ export const AdminPanel = ({ view }: { view: AirdropView | null }) => {
   return (
     <div className="panel">
       {localError && <p className="error">{localError}</p>}
+      {!localError && error && <p className="error">{error}</p>}
       {!api && <CreateCampaignForm onCreate={create} />}
       {api && view && <AdminActions view={view} api={api} />}
       {api && !view && <p className="muted">Waiting for campaign state…</p>}
