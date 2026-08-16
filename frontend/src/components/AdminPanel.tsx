@@ -34,16 +34,28 @@ const DeployedAddress = ({ address }: { address: string }) => {
 const CreateCampaignForm = ({ onCreate }: { onCreate: (spec: { name: string; campaignIdHex: string; rewardPerClaim: bigint; maxClaims: bigint }) => void }) => {
   const { busy } = useAirdrop();
   const [name, setName] = useState('');
-  const [reward, setReward] = useState('1000');
+  const [reward, setReward] = useState('100');
   const [maxClaims, setMaxClaims] = useState('100');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    const rewardNum = Number(reward.trim());
+    const maxClaimsNum = Number(maxClaims.trim());
+    if (!Number.isInteger(rewardNum) || rewardNum < 0 || rewardNum > 255) {
+      setFormError('Reward per claim must be an integer from 0 to 255 (the contract uses Uint<0..256>).');
+      return;
+    }
+    if (!Number.isInteger(maxClaimsNum) || maxClaimsNum < 1 || maxClaimsNum > 255) {
+      setFormError('Max claims must be an integer from 1 to 255 (the contract uses Uint<0..256>).');
+      return;
+    }
+    setFormError(null);
     onCreate({
       name: name.trim() || 'PrivateAirdrop Campaign',
       campaignIdHex: randomHex32(),
-      rewardPerClaim: BigInt(reward.trim() || '0'),
-      maxClaims: BigInt(maxClaims.trim() || '0'),
+      rewardPerClaim: BigInt(rewardNum),
+      maxClaims: BigInt(maxClaimsNum),
     });
   };
 
@@ -51,19 +63,20 @@ const CreateCampaignForm = ({ onCreate }: { onCreate: (spec: { name: string; cam
     <form className="form" onSubmit={submit}>
       <h3>Create a new campaign</h3>
       <p className="muted">No contract address is configured, so the admin deploys a new campaign from here.</p>
+      {formError && <p className="error">{formError}</p>}
       <label>
         Campaign name
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Midnight Season Rewards" />
       </label>
       <label>
         Reward per claim
-        <input value={reward} onChange={(e) => setReward(e.target.value)} type="number" min="0" step="1" />
+        <input value={reward} onChange={(e) => setReward(e.target.value)} type="number" min="0" max="255" step="1" />
       </label>
       <label>
         Max claims
-        <input value={maxClaims} onChange={(e) => setMaxClaims(e.target.value)} type="number" min="1" step="1" />
+        <input value={maxClaims} onChange={(e) => setMaxClaims(e.target.value)} type="number" min="1" max="255" step="1" />
       </label>
-      <p className="muted small">A random 32-byte campaign id is generated client-side.</p>
+      <p className="muted small">Reward and max claims are capped at 255 (Uint&lt;0..256&gt;). A random 32-byte campaign id is generated client-side.</p>
       <button className="btn" type="submit" disabled={busy !== null}>
         Deploy campaign
       </button>
